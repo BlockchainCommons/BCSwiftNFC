@@ -1,7 +1,13 @@
 import CoreNFC
 import Combine
 
-public class NDEFReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate {
+public enum NFCReaderError: Error {
+    case noSession
+    case noRecords
+    case noURI
+}
+
+public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate {
     @Published public var state: State
     public let tagPublisher = PassthroughSubject<NFCNDEFTag, Never>()
     
@@ -17,7 +23,6 @@ public class NDEFReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegat
         case invalid(Error)
     }
     
-    @MainActor
     public override init() {
         if NFCReaderSession.readingAvailable {
             self.state = .setup
@@ -45,7 +50,7 @@ public class NDEFReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegat
         }
 
         _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let session = NFCNDEFReaderSession(delegate: self, queue: DispatchQueue.main, invalidateAfterFirstRead: false)
+            let session = NFCNDEFReaderSession(delegate: self, queue: DispatchQueue.main, invalidateAfterFirstRead: true)
             if let alertMessage = alertMessage {
                 session.alertMessage = alertMessage
             }
@@ -65,6 +70,36 @@ public class NDEFReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegat
         } else {
             session.invalidate()
         }
+    }
+    
+    @MainActor
+    public func readTag(_ tag: NFCNDEFTag) async throws -> NFCNDEFMessage {
+        guard case .active = state else {
+            throw NFCReaderError.noSession
+        }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NFCNDEFMessage, Error>) in
+            tag.readNDEF { message, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else if let message = message {
+                    continuation.resume(returning: message)
+                } else {
+                    fatalError()
+                }
+            }
+        }
+    }
+    
+    @MainActor
+    public func readURI(_ tag: NFCNDEFTag) async throws -> URL {
+        let message = try await readTag(tag)
+        guard let record = message.records.first else {
+            throw NFCReaderError.noRecords
+        }
+        guard let uri = record.wellKnownTypeURIPayload() else {
+            throw NFCReaderError.noURI
+        }
+        return uri
     }
     
     public func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {
