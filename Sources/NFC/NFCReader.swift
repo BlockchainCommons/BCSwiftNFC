@@ -12,7 +12,11 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     public let tagPublisher = PassthroughSubject<NFCNDEFTag, Never>()
     
     public static var isReadingAvailable: Bool {
+        #if targetEnvironment(macCatalyst)
+        false
+        #else
         NFCReaderSession.readingAvailable
+        #endif
     }
     
     public enum State {
@@ -24,7 +28,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     }
     
     public override init() {
-        if NFCReaderSession.readingAvailable {
+        if Self.isReadingAvailable {
             self.state = .setup
         } else {
             self.state = .notAvailable
