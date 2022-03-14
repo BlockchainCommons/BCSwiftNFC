@@ -1,10 +1,42 @@
 import CoreNFC
 import Combine
 
-public enum NFCReaderError: Error {
+public enum NFCReaderError: LocalizedError {
     case noSession
     case noRecords
     case noURI
+    case writingNotSupported
+    case writingNotAllowed
+    case writingUnknownStatus
+    case writingTooSmall((needed: Int, capacity: Int))
+    
+    public var errorDescription: String? {
+        switch self {
+        case .writingNotSupported:
+            return "This tag does not support writing."
+        case .writingNotAllowed:
+            return "This tag has been locked to read-only."
+        case .writingTooSmall((let needed, let capacity)):
+            return "\(needed) bytes required, but tag only holds \(capacity)."
+        default:
+            return nil
+        }
+    }
+}
+
+extension NFCNDEFStatus: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .notSupported:
+            return "notSupported"
+        case .readWrite:
+            return "readWrite"
+        case .readOnly:
+            return "readOnly"
+        @unknown default:
+            return "unknown"
+        }
+    }
 }
 
 public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate {
@@ -81,17 +113,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
         guard case .active = state else {
             throw NFCReaderError.noSession
         }
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NFCNDEFMessage, Error>) in
-            tag.readNDEF { message, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                } else if let message = message {
-                    continuation.resume(returning: message)
-                } else {
-                    fatalError()
-                }
-            }
-        }
+        return try await tag.readNDEF()
     }
     
     @MainActor
@@ -104,6 +126,40 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
             throw NFCReaderError.noURI
         }
         return uri
+    }
+    
+    @MainActor
+    public func writeTag(_ tag: NFCNDEFTag, message: NFCNDEFMessage) async throws {
+        let (status, capacity) = try await queryStatus(tag)
+        
+        switch status {
+        case .notSupported:
+            throw NFCReaderError.writingNotSupported
+        case .readOnly:
+            throw NFCReaderError.writingNotAllowed
+        case .readWrite:
+            break
+        @unknown default:
+            throw NFCReaderError.writingUnknownStatus
+        }
+        
+        if capacity < message.length {
+            throw NFCReaderError.writingTooSmall((message.length, capacity))
+        }
+
+        try await tag.writeNDEF(message)
+    }
+    
+    @MainActor
+    public func writeURI(_ tag: NFCNDEFTag, uri: URL) async throws {
+        let payload = NFCNDEFPayload.wellKnownTypeURIPayload(url: uri)!
+        let message = NFCNDEFMessage(records: [payload])
+        try await writeTag(tag, message: message)
+    }
+    
+    @MainActor
+    public func queryStatus(_ tag: NFCNDEFTag) async throws -> (NFCNDEFStatus, Int) {
+        try await tag.queryNDEFStatus()
     }
     
     public func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {
