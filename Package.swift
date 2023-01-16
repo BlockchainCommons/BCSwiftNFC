@@ -1,4 +1,4 @@
-// swift-tools-version:5.6
+// swift-tools-version:5.7
 
 import PackageDescription
 
@@ -15,7 +15,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/WolfMcNally/WolfBase",
-            from: "4.0.0"
+            from: "5.0.0"
         ),
     ],
     targets: [

@@ -1,16 +1,32 @@
 {
-  "object": {
-    "pins": [
-      {
-        "package": "WolfBase",
-        "repositoryURL": "https://github.com/WolfMcNally/WolfBase",
-        "state": {
-          "branch": null,
-          "revision": "81a1ddeb4e21dadc34ed23faed3b61e475eb4fab",
-          "version": "4.0.0"
-        }
+  "pins" : [
+    {
+      "identity" : "swift-algorithms",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-algorithms.git",
+      "state" : {
+        "revision" : "b14b7f4c528c942f121c8b860b9410b2bf57825e",
+        "version" : "1.0.0"
       }
-    ]
-  },
-  "version": 1
+    },
+    {
+      "identity" : "swift-numerics",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-numerics",
+      "state" : {
+        "revision" : "0a5bc04095a675662cf24757cc0640aa2204253b",
+        "version" : "1.0.2"
+      }
+    },
+    {
+      "identity" : "wolfbase",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/WolfMcNally/WolfBase",
+      "state" : {
+        "revision" : "f47ff5ac3fde68b52e3cf26cac2a464fbc113bb9",
+        "version" : "5.0.1"
+      }
+    }
+  ],
+  "version" : 2
 }
