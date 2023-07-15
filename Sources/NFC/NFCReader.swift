@@ -113,6 +113,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
         guard case .active = state else {
             throw NFCReaderError.noSession
         }
+        try await connect(to: tag)
         return try await tag.readNDEF()
     }
     
@@ -147,6 +148,8 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
             throw NFCReaderError.writingTooSmall((message.length, capacity))
         }
 
+        try await connect(to: tag)
+
         try await tag.writeNDEF(message)
     }
     
@@ -169,10 +172,24 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     }
     
     public func readerSession(_ session: NFCNDEFReaderSession, didDetect tags: [NFCNDEFTag]) {
-        guard let tag = tags.first else {
+        if tags.count > 1 {
+            // Restart polling in 500ms
+            let retryInterval = DispatchTimeInterval.milliseconds(500)
+            session.alertMessage = "More than 1 tag is detected, please remove all tags and try again."
+            DispatchQueue.global().asyncAfter(deadline: .now() + retryInterval, execute: {
+                session.restartPolling()
+            })
             return
         }
-        tagPublisher.send(tag)
+
+        tagPublisher.send(tags.first!)
+    }
+    
+    public func connect(to tag: NFCNDEFTag) async throws {
+        guard case .active(let session) = state else {
+            throw NFCReaderError.noSession
+        }
+        try await session.connect(to: tag)
     }
     
     public func readerSession(_ session: NFCNDEFReaderSession, didDetectNDEFs messages: [NFCNDEFMessage]) {
