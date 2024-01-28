@@ -1,5 +1,9 @@
 import CoreNFC
 import Combine
+import Observation
+import os
+
+fileprivate let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NFCReader")
 
 public enum NFCReaderError: LocalizedError {
     case noSession
@@ -13,13 +17,13 @@ public enum NFCReaderError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .writingNotSupported:
-            return "This tag does not support writing."
+            "This tag does not support writing."
         case .writingNotAllowed:
-            return "This tag has been locked to read-only."
+            "This tag has been locked to read-only."
         case .writingTooSmall((let needed, let capacity)):
-            return "\(needed) bytes required, but tag only holds \(capacity)."
+            "\(needed) bytes required, but tag only holds \(capacity)."
         default:
-            return nil
+            nil
         }
     }
 }
@@ -28,19 +32,21 @@ extension NFCNDEFStatus: CustomStringConvertible {
     public var description: String {
         switch self {
         case .notSupported:
-            return "notSupported"
+            "notSupported"
         case .readWrite:
-            return "readWrite"
+            "readWrite"
         case .readOnly:
-            return "readOnly"
+            "readOnly"
         @unknown default:
-            return "unknown"
+            "unknown"
         }
     }
 }
 
-public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate {
-    @Published public var state: State
+@Observable
+public class NFCReader: NSObject, NFCNDEFReaderSessionDelegate, Identifiable {
+    public let id: UUID
+    public private(set) var state: State
     public let tagPublisher = PassthroughSubject<NFCNDEFTag, Never>()
     
     public static var isReadingAvailable: Bool {
@@ -60,12 +66,22 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     }
     
     public override init() {
+        self.id = UUID()
         if Self.isReadingAvailable {
             self.state = .setup
         } else {
             self.state = .notAvailable
         }
         super.init()
+        logger.debug("🪪 \(self.id) init")
+    }
+    
+    // Generally speaking this object should be treated as a singleton.
+    // So if you see it being destroyed and recreated in your SwiftUI
+    // app, it's probably not going to have the behavior you expect.
+    // https://github.com/BlockchainCommons/GordianSeedTool-iOS/issues/205
+    deinit {
+        logger.debug("🪪 \(self.id) deinit")
     }
     
     private var continuation: CheckedContinuation<Void, Error>?
@@ -81,6 +97,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     
     @MainActor
     public func beginSession(alertMessage: String? = nil) async throws {
+        logger.debug("🪪 \(self.id) beginSession")
         guard canBeginSession else {
             return
         }
@@ -92,12 +109,14 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
             }
             self.continuation = continuation
             self.state = .starting(session)
+            logger.debug("🪪 \(self.id) session.begin()")
             session.begin()
         }
     }
     
     @MainActor
     public func invalidate(errorMessage: String? = nil) {
+        logger.debug("🪪 \(self.id) session.invalidate(\(String(describing: errorMessage)))")
         guard case let .active(session) = state else {
             return
         }
@@ -110,6 +129,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     
     @MainActor
     public func readTag(_ tag: NFCNDEFTag) async throws -> NFCNDEFMessage {
+        logger.debug("🪪 \(self.id) readTag(\(tag.description))")
         guard case .active = state else {
             throw NFCReaderError.noSession
         }
@@ -119,6 +139,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     
     @MainActor
     public func readURI(_ tag: NFCNDEFTag) async throws -> URL {
+        logger.debug("🪪 \(self.id) readURI(\(tag.description))")
         let message = try await readTag(tag)
         guard let record = message.records.first else {
             throw NFCReaderError.noRecords
@@ -131,6 +152,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     
     @MainActor
     public func writeTag(_ tag: NFCNDEFTag, message: NFCNDEFMessage) async throws {
+        logger.debug("🪪 \(self.id) writeTag(\(tag.description), \(message))")
         let (status, capacity) = try await queryStatus(tag)
         
         switch status {
@@ -155,6 +177,7 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     
     @MainActor
     public func writeURI(_ tag: NFCNDEFTag, uri: URL) async throws {
+        logger.debug("🪪 \(self.id) writeURI(\(tag.description), \(uri, privacy: .private))")
         let payload = NFCNDEFPayload.wellKnownTypeURIPayload(url: uri)!
         let message = NFCNDEFMessage(records: [payload])
         try await writeTag(tag, message: message)
@@ -166,12 +189,14 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     }
     
     public func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {
+        logger.debug("🪪 \(self.id) readerSessionDidBecomeActive(\(session))")
         self.state = .active(session)
         self.continuation!.resume(with: .success(()))
         self.continuation = nil
     }
     
     public func readerSession(_ session: NFCNDEFReaderSession, didDetect tags: [NFCNDEFTag]) {
+        logger.debug("🪪 \(self.id) readerSession(\(session), didDetect: \(tags))")
         if tags.count > 1 {
             // Restart polling in 500ms
             let retryInterval = DispatchTimeInterval.milliseconds(500)
@@ -182,10 +207,16 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
             return
         }
 
-        tagPublisher.send(tags.first!)
+        sendTag(tags.first!)
+    }
+    
+    private func sendTag(_ tag: NFCNDEFTag) {
+        logger.debug("🪪 \(self.id) sendTag(\(tag.description))")
+        tagPublisher.send(tag)
     }
     
     public func connect(to tag: NFCNDEFTag) async throws {
+        logger.debug("🪪 \(self.id) connect(\(tag.description))")
         guard case .active(let session) = state else {
             throw NFCReaderError.noSession
         }
@@ -193,10 +224,12 @@ public class NFCReader: NSObject, ObservableObject, NFCNDEFReaderSessionDelegate
     }
     
     public func readerSession(_ session: NFCNDEFReaderSession, didDetectNDEFs messages: [NFCNDEFMessage]) {
+        logger.debug("🪪 \(self.id) readerSession(\(session), didDetectNDEFs:\(messages))")
         // Required but never called because readerSession:didDetect:() is provided
     }
 
     public func readerSession(_ session: NFCNDEFReaderSession, didInvalidateWithError error: Error) {
+        logger.debug("🪪 \(self.id) readerSession(\(session), didInvalidateWithError:\(error))")
         state = .invalid(error)
         if let continuation = continuation {
             continuation.resume(with: .failure(error))
