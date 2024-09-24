@@ -1,11 +1,12 @@
-// swift-tools-version:5.9
+// swift-tools-version:5.10
 
 import PackageDescription
 
 let package = Package(
     name: "BCSwiftNFC",
     platforms: [
-        .iOS(.v17)
+        .iOS(.v17),
+        .macCatalyst(.v17),
     ],
     products: [
         .library(
@@ -13,15 +14,11 @@ let package = Package(
             targets: ["NFC"]),
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/WolfMcNally/WolfBase",
-            from: "6.0.0"
-        ),
     ],
     targets: [
         .target(
             name: "NFC",
-            dependencies: ["WolfBase"]),
+            dependencies: []),
         .testTarget(
             name: "NFCTests",
             dependencies: ["NFC"]),

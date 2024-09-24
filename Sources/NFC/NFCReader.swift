@@ -28,7 +28,7 @@ public enum NFCReaderError: LocalizedError {
     }
 }
 
-extension NFCNDEFStatus: CustomStringConvertible {
+extension NFCNDEFStatus: @retroactive CustomStringConvertible {
     public var description: String {
         switch self {
         case .notSupported:
